@@ -1,0 +1,59 @@
+
+pipeline {
+    agent any
+
+    stages {
+        stage('Copy Artifact') {
+            steps {
+                copyArtifacts(
+                    projectName: 'CI-React-App',
+                    selector: specific("${params.BUILD_NUMBER}"),
+                    filter: "react-app-${params.BUILD_NUMBER}.tar.gz"
+                )
+            }
+        }
+
+        stage('Extract Artifact') {
+            steps {
+                sh '''
+                    mkdir -p deploy
+                    tar -xzf "react-app-${BUILD_NUMBER}.tar.gz" -C deploy
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    def environment = params.ENVIRONMENT.toLowerCase()
+                    sh "docker build -t react-app-${environment}:${params.BUILD_NUMBER} deploy"
+                }
+            }
+        }
+
+        stage('Deploy Container') {
+            steps {
+                script {
+                    def environment = params.ENVIRONMENT.toLowerCase()
+
+                    def ports = [
+                        DEV : 8081,
+                        TEST: 8082,
+                        ACC : 8083,
+                        PROD: 8084
+                    ]
+
+                    def port = ports[params.ENVIRONMENT]
+
+                    sh """
+                        docker rm -f react-${environment} || true
+                        docker run -d \
+                            --name react-${environment} \
+                            -p ${port}:80 \
+                            react-app-${environment}:${params.BUILD_NUMBER}
+                    """
+                }
+            }
+        }
+    }
+}
